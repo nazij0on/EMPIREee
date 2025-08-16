@@ -9,10 +9,294 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, onSnapshot, collection, serverTimestamp, query, addDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        let app;
+        let db;
+        let storage;
+        
+        const characterModal = document.getElementById('character-modal');
+        const closeCharacterModalBtn = document.getElementById('close-character-modal');
+        const characterGallery = document.getElementById('character-gallery');
+        const characterUploadForm = document.getElementById('character-upload-form');
+        const uploadTypeSelect = document.getElementById('upload-type');
+        const uploadFileInput = document.getElementById('upload-file');
+        const uploadBtn = document.getElementById('upload-btn');
+        const uploadProgressText = document.getElementById('upload-progress');
+
+        const summaryModal = document.getElementById('summary-modal');
+        const closeSummaryModalBtn = document.getElementById('close-summary-modal');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const summaryContent = document.getElementById('summary-content');
+        
+        const characters = [
+            { name: "جادوگر بنفش", vibe: "داستان‌ساز، chaotic اما جذاب.", humor: "شروع با هیچ، پایان با یک داستان غیرقابل باور.", style: "عبای بنفش، جزئیات طلایی، زنجیر.", mantra: "Every move is a love story… or a scam.", color: "bg-purple-800" },
+            { name: "جادوگر آبی", vibe: "آرام، کم‌حرف، هر کلمه‌اش پرمعنا.", humor: "طنز کنایه‌آمیز و فلسفی.", style: "عبای آبی سلطنتی، عینک آفتابی.", mantra: "Silence is the loudest flex.", color: "bg-blue-800" },
+            { name: "ASMR Beauty Guru", vibe: "اغراق‌شده، آرامش‌دهنده در ظاهر، ولی با دیالوگ‌های بامزه و غیرمنطقی.", humor: "ایجاد تنش از طریق جملات غیرمنتظره.", style: "پس‌زمینه پاستلی، میکروفون‌های ASMR بزرگ.", mantra: "Relax… I'm just about to tell you something you'll hate.", color: "bg-pink-800" },
+            { name: "Love Island Parody", vibe: "کاراکتر اینفلوئنسر عشق، عاشق نمایش و دروغ.", humor: "مسخره کردن اصطلاحات و رفتارهای اینفلوئنسری.", style: "پس‌زمینه جزیره‌ای، لباس‌های رنگارنگ.", mantra: "In this love game, my only goal is to win… and get sponsored.", color: "bg-teal-800" },
+            { name: "Music Video Parody", vibe: "آرتیست خودشیفته و بااستعداد.", humor: "استفاده از اصطلاحات موسیقی برای شوخی.", style: "استودیو موسیقی، لباس‌های street style.", mantra: "The only thing I'm dropping is the beat… and maybe some truth bombs.", color: "bg-red-800" },
+            { name: "Fitness Guru", vibe: "مربی انگیزشی در ظاهر، با محتوای بیهوده.", humor: "اغراق در جملات انگیزشی.", style: "باشگاه مدرن، لباس ورزشی تنگ.", mantra: "I'm not here to get you in shape, I'm here to sell you the shape I'm in.", color: "bg-orange-800" },
+            { name: "Serious News Anchor", vibe: "جدی، اما با نفوذ میم و ترند.", humor: "شکستن جدیت خبر با یک شوخی.", style: "استودیوی خبری شیک.", mantra: "And now for the news you didn't ask for, but desperately needed.", color: "bg-gray-700" },
+            { name: "Business Tycoon", vibe: "خشک و منطقی، همه چیز را بیزینس می‌بیند.", humor: "استفاده از اصطلاحات مالی برای توصیف روابط.", style: "دفتر کار شیک، لباس رسمی.", mantra: "Everything is a business opportunity… even silence.", color: "bg-indigo-800" },
+            { name: "Meme Creator", vibe: "با سرعت نور از ترندها استفاده می‌کند.", humor: "ایجاد میم‌های مسخره از ترندها.", style: "پس‌زمینه ساده، با افکت‌های TikTok.", mantra: "If it's a trend, it's my content.", color: "bg-green-800" },
+            { name: "Influencer Parody", vibe: "نمایش تمام جزئیات زندگی با اغراق.", humor: "تقلید از رفتار اینفلوئنسرها.", style: "پس‌زمینه مناظر طبیعی یا کافه‌های شیک.", mantra: "My life is a movie... and you're all just watching.", color: "bg-rose-800" }
+        ];
+
+        const tools = [
+            { name: "Runway", status: "(در حال حاضر دارید)", desc: "برای تولید و ویرایش ویدیو.", icon: "🎬" },
+            { name: "VEO 3", status: "(نیاز به خرید)", desc: "برای ساخت صحنه‌های سینمایی.", icon: "🎥" },
+            { name: "Scenario AI", status: "(نیاز به خرید)", desc: "برای ساخت مدل کاراکترها.", icon: "🤖" },
+            { name: "ElevenLabs", status: "(نیاز به خرید)", desc: "برای صداگذاری طبیعی.", icon: "🗣️" },
+            { name: "ChatGPT / Claude", status: "", desc: "برای ایده‌پردازی و اسکریپت‌نویسی.", icon: "✍️" }
+        ];
+        
+        const characterGrid = document.getElementById('character-grid');
+        const toolsList = document.getElementById('tools-list');
+
+        const initFirebase = async () => {
+            if (Object.keys(firebaseConfig).length > 0) {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                storage = getStorage(app);
+            } else {
+                console.error("Firebase config is not available. Running in local mode.");
+            }
+            populateContent();
+        };
+
+        const uploadFileForCharacter = async (e) => {
+            e.preventDefault();
+            const file = uploadFileInput.files[0];
+            if (!file) {
+                alert('لطفا یک فایل انتخاب کنید.');
+                return;
+            }
+
+            const characterName = characterModal.dataset.character;
+            const uploaderName = "ناشناس";
+            const timestamp = new Date().toISOString();
+            const fileRef = ref(storage, `artifacts/${appId}/character_assets/${characterName}/${file.name}-${timestamp}`);
+
+            uploadBtn.disabled = true;
+            uploadProgressText.textContent = "در حال آپلود...";
+            uploadProgressText.classList.remove('hidden');
+
+            try {
+                const uploadTask = await uploadBytes(fileRef, file);
+                const url = await getDownloadURL(uploadTask.ref);
+
+                const assetsCollectionRef = collection(db, `/artifacts/${appId}/public/data/character_assets`);
+                await addDoc(assetsCollectionRef, {
+                    name: file.name,
+                    url: url,
+                    type: file.type.startsWith('image') ? 'image' : 'video',
+                    characterName: characterName,
+                    uploader: uploaderName,
+                    timestamp: serverTimestamp()
+                });
+                
+                e.target.reset();
+                uploadProgressText.textContent = "آپلود موفق!";
+                alert('فایل با موفقیت آپلود شد!');
+            } catch (error) {
+                console.error("Error uploading file:", error);
+                uploadProgressText.textContent = "خطا در آپلود.";
+                alert('خطا در آپلود فایل.');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadProgressText.classList.add('hidden');
+            }
+        };
+
+        const showCharacterModal = (character) => {
+            characterModal.dataset.character = character.name;
+            document.getElementById('modal-name').textContent = character.name;
+            document.getElementById('modal-vibe').textContent = character.vibe;
+            document.getElementById('modal-humor').textContent = character.humor;
+            document.getElementById('modal-style').textContent = character.style;
+            document.getElementById('modal-mantra').textContent = character.mantra;
+            
+            characterModal.classList.remove('hidden');
+            
+            const assetsCollectionRef = collection(db, `/artifacts/${appId}/public/data/character_assets`);
+            const q = query(assetsCollectionRef, where("characterName", "==", character.name));
+            
+            onSnapshot(q, (snapshot) => {
+                characterGallery.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const item = document.createElement('div');
+                    item.className = 'w-full aspect-square relative rounded-lg overflow-hidden shadow-lg';
+                    if (data.type === 'image') {
+                        item.innerHTML = `<img src="${data.url}" alt="${data.name}" class="w-full h-full object-cover">`;
+                    } else if (data.type === 'video') {
+                        item.innerHTML = `<video src="${data.url}" controls class="w-full h-full object-cover"></video>`;
+                    }
+                    characterGallery.appendChild(item);
+                });
+            }, (error) => {
+                console.error("Error fetching character assets:", error);
+                characterGallery.innerHTML = `<p class="text-red-400">خطا در بارگذاری فایل‌ها.</p>`;
+            });
+        };
+
+        const closeCharacterModal = () => {
+            characterModal.classList.add('hidden');
+        };
+        
+        const populateContent = () => {
+            if (!characterGrid || !toolsList) {
+                console.error("Content elements not found in the DOM.");
+                return;
+            }
+            
+            characters.forEach(char => {
+                const card = document.createElement('div');
+                card.className = `character-card ${char.color} p-4 rounded-lg text-center flex flex-col justify-center items-center h-40`;
+                card.innerHTML = `<h5 class="text-xl font-bold">${char.name}</h5>`;
+                card.addEventListener('click', () => showCharacterModal(char));
+                characterGrid.appendChild(card);
+            });
+
+            tools.forEach(tool => {
+                const item = document.createElement('li');
+                item.className = 'flex items-start space-x-reverse space-x-3';
+                item.innerHTML = `
+                    <span class="text-2xl pt-1">${tool.icon}</span>
+                    <div>
+                        <span class="font-bold">${tool.name}</span>
+                        <span class="text-sm text-yellow-400">${tool.status}</span>
+                        <p class="text-sm text-gray-400">${tool.desc}</p>
+                    </div>
+                `;
+                toolsList.appendChild(item);
+            });
+
+            const phaseCtx = document.getElementById('phaseChart').getContext('2d');
+            const phaseChart = new Chart(phaseCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Foundation', 'Growth', 'Empire'],
+                    datasets: [{
+                        label: 'Project Phases',
+                        data: [40, 30, 30],
+                        backgroundColor: ['#a855f7', '#facc15', '#be185d'],
+                        borderColor: '#1f2937',
+                        borderWidth: 4,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: '#d1d5db',
+                                font: {
+                                    family: 'Vazirmatn',
+                                    size: 14
+                                },
+                                boxWidth: 20,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            titleFont: { family: 'Vazirmatn' },
+                            bodyFont: { family: 'Vazirmatn' },
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += context.parsed + '%';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            characterUploadForm.addEventListener('submit', uploadFileForCharacter);
+            closeCharacterModalBtn.addEventListener('click', closeCharacterModal);
+            closeSummaryModalBtn.addEventListener('click', () => summaryModal.classList.add('hidden'));
+
+            summarizeBtn.addEventListener('click', async () => {
+                summaryModal.classList.remove('hidden');
+                summaryContent.innerHTML = `
+                    <div class="flex justify-center items-center h-48">
+                        <div class="animate-spin rounded-full h-20 w-20 border-t-2 border-b-2 border-purple-500"></div>
+                    </div>
+                `;
+                const prompt = `خلاصه نقشه راه پروژه AI با عنوان 'امپراتوری محتوای AI' را در قالب یک پاراگراف جذاب و الهام‌بخش بنویس. این خلاصه باید فازهای اصلی (Foundation, Growth, Empire) و هدف کلی پروژه را پوشش دهد.`;
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                try {
+                    let response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const text = result.candidates[0].content.parts[0].text;
+                    summaryContent.innerHTML = `<p>${text}</p>`;
+                } catch (error) {
+                    summaryContent.innerHTML = `<p class="text-red-400">خطایی در دریافت خلاصه از هوش مصنوعی رخ داد. لطفاً دوباره تلاش کنید.</p>`;
+                }
+            });
+
+            document.getElementById('generate-mantra-btn').addEventListener('click', async () => {
+                const characterName = characterModal.dataset.character;
+                const characterData = characters.find(c => c.name === characterName);
+                const mantraElement = document.getElementById('modal-mantra');
+                const mantraLoading = document.getElementById('mantra-loading');
+                
+                mantraLoading.classList.remove('hidden');
+                
+                const prompt = `یک مانترای جدید و جذاب به زبان انگلیسی برای کاراکتر "${characterData.name}" با ویژگی‌های زیر بساز. این مانترا باید کوتاه، الهام‌بخش و با هویت کاراکتر همخوان باشد. ویژگی‌ها: ${characterData.vibe}, ${characterData.humor}, ${characterData.style}.`;
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                try {
+                    let response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const text = result.candidates[0].content.parts[0].text;
+                    mantraElement.textContent = text.replace(/["']+/g, '');
+                } catch (error) {
+                    mantraElement.textContent = "Error generating new mantra.";
+                } finally {
+                    mantraLoading.classList.add('hidden');
+                }
+            });
+        };
+        
+        window.onload = initFirebase;
+    </script>
     <style>
         body {
             font-family: 'Vazirmatn', sans-serif;
-            scroll-behavior: smooth;
         }
         .character-card {
             transition: all 0.3s ease;
@@ -21,6 +305,9 @@
         .character-card:hover {
             transform: scale(1.05);
             box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        }
+        .modal-bg {
+            background-color: rgba(0, 0, 0, 0.7);
         }
     </style>
 </head>
@@ -36,6 +323,10 @@
         <!-- The AI Content Bible Section -->
         <div>
             <h2 class="text-2xl font-bold mb-6 text-yellow-400">نقشه راه و Bible محتوای AI</h2>
+            
+            <button id="summarize-btn" class="mb-8 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition-colors duration-300">
+                خلاصه پروژه
+            </button>
             
             <!-- Mindset Bible -->
             <div class="bg-gray-700 p-6 rounded-2xl mb-8 space-y-6">
@@ -132,111 +423,67 @@
         </div>
     </div>
     
-    <script>
-        const characters = [
-            { name: "جادوگر بنفش", color: "bg-purple-800" },
-            { name: "جادوگر آبی", color: "bg-blue-800" },
-            { name: "ASMR Beauty Guru", color: "bg-pink-800" },
-            { name: "Love Island Parody", color: "bg-teal-800" },
-            { name: "Music Video Parody", color: "bg-red-800" },
-            { name: "Fitness Guru", color: "bg-orange-800" },
-            { name: "Serious News Anchor", color: "bg-gray-700" },
-            { name: "Business Tycoon", color: "bg-indigo-800" },
-            { name: "Meme Creator", color: "bg-green-800" },
-            { name: "Influencer Parody", color: "bg-rose-800" }
-        ];
-        
-        const tools = [
-            { name: "Runway", status: "(در حال حاضر دارید)", desc: "برای تولید و ویرایش ویدیو.", icon: "🎬" },
-            { name: "VEO 3", status: "(نیاز به خرید)", desc: "برای ساخت صحنه‌های سینمایی.", icon: "🎥" },
-            { name: "Scenario AI", status: "(نیاز به خرید)", desc: "برای ساخت مدل کاراکترها.", icon: "🤖" },
-            { name: "ElevenLabs", status: "(نیاز به خرید)", desc: "برای صداگذاری طبیعی.", icon: "🗣️" },
-            { name: "ChatGPT / Claude", status: "", desc: "برای ایده‌پردازی و اسکریپت‌نویسی.", icon: "✍️" }
-        ];
-
-        const characterGrid = document.getElementById('character-grid');
-        const toolsList = document.getElementById('tools-list');
-
-        const populateContent = () => {
-            if (!characterGrid || !toolsList) {
-                console.error("Content elements not found in the DOM.");
-                return;
-            }
+    <!-- Character Details Modal -->
+    <div id="character-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-lg border border-purple-800 w-full max-w-3xl space-y-6">
+            <div class="flex justify-between items-center border-b border-gray-700 pb-4">
+                <h3 id="modal-name" class="text-3xl font-bold text-yellow-400"></h3>
+                <button id="close-character-modal" class="text-gray-400 hover:text-red-500 text-3xl">&times;</button>
+            </div>
             
-            characters.forEach(char => {
-                const card = document.createElement('div');
-                card.className = `character-card ${char.color} p-4 rounded-lg text-center flex flex-col justify-center items-center h-40`;
-                card.innerHTML = `<h5 class="text-xl font-bold">${char.name}</h5>`;
-                characterGrid.appendChild(card);
-            });
-
-            tools.forEach(tool => {
-                const item = document.createElement('li');
-                item.className = 'flex items-start space-x-reverse space-x-3';
-                item.innerHTML = `
-                    <span class="text-2xl pt-1">${tool.icon}</span>
-                    <div>
-                        <span class="font-bold">${tool.name}</span>
-                        <span class="text-sm text-yellow-400">${tool.status}</span>
-                        <p class="text-sm text-gray-400">${tool.desc}</p>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="space-y-4 text-lg">
+                    <p><strong>ویژگی اصلی:</strong> <span id="modal-vibe" class="text-gray-300"></span></p>
+                    <p><strong>کد شوخی:</strong> <span id="modal-humor" class="text-gray-300"></span></p>
+                    <p><strong>استایل بصری:</strong> <span id="modal-style" class="text-gray-300"></span></p>
+                    <p><strong>مانترا:</strong> <span id="modal-mantra" class="text-gray-300"></span></p>
+                    <button id="generate-mantra-btn" class="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition-colors duration-300">
+                        تولید مانترای جدید ✨
+                    </button>
+                    <div id="mantra-loading" class="hidden mt-4 flex justify-center items-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500"></div>
                     </div>
-                `;
-                toolsList.appendChild(item);
-            });
+                </div>
 
-            const phaseCtx = document.getElementById('phaseChart').getContext('2d');
-            const phaseChart = new Chart(phaseCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Foundation', 'Growth', 'Empire'],
-                    datasets: [{
-                        label: 'Project Phases',
-                        data: [40, 30, 30],
-                        backgroundColor: ['#a855f7', '#facc15', '#be185d'],
-                        borderColor: '#1f2937',
-                        borderWidth: 4,
-                        hoverOffset: 8
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '70%',
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: {
-                                color: '#d1d5db',
-                                font: {
-                                    family: 'Vazirmatn',
-                                    size: 14
-                                },
-                                boxWidth: 20,
-                                padding: 20
-                            }
-                        },
-                        tooltip: {
-                            titleFont: { family: 'Vazirmatn' },
-                            bodyFont: { family: 'Vazirmatn' },
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed !== null) {
-                                        label += context.parsed + '%';
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        };
-        
-        window.onload = populateContent;
-    </script>
+                <div class="space-y-4">
+                    <h4 class="text-xl font-bold text-purple-400">آپلود Assets</h4>
+                    <form id="character-upload-form" class="space-y-2">
+                        <label for="upload-type" class="block text-gray-400">نوع فایل:</label>
+                        <select id="upload-type" class="w-full px-4 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            <option value="image">تصویر</option>
+                            <option value="video">ویدیو</option>
+                        </select>
+                        <input type="file" id="upload-file" class="w-full px-4 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400" required>
+                        <div class="flex items-center space-x-reverse space-x-4">
+                            <button type="submit" id="upload-btn" class="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-lg transition-colors duration-300">آپلود</button>
+                            <p id="upload-progress" class="hidden text-sm text-gray-400"></p>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <hr class="my-6 border-gray-700" />
+            
+            <h4 class="text-xl font-bold text-purple-400">گالری Assets</h4>
+            <div id="character-gallery" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Project Summary Modal -->
+    <div id="summary-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-lg border border-purple-700 space-y-6">
+            <div class="flex justify-between items-center border-b border-gray-700 pb-4">
+                <h3 class="text-3xl font-bold text-yellow-400">خلاصه نقشه راه پروژه</h3>
+                <button id="close-summary-modal" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            <div id="summary-content" class="text-lg text-gray-300 space-y-4">
+                <div class="flex justify-center items-center h-48">
+                    <div class="animate-spin rounded-full h-20 w-20 border-t-2 border-b-2 border-purple-500"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
